@@ -19,8 +19,10 @@ import (
 	//	ctrl "sigs.k8s.io/controller-runtime/pkg/controller"
 
 	api "github.com/altinity/clickhouse-operator/pkg/apis/clickhouse-keeper.altinity.com/v1"
+	chiApi "github.com/altinity/clickhouse-operator/pkg/apis/clickhouse.altinity.com/v1"
 	"github.com/altinity/clickhouse-operator/pkg/chop"
 	controller "github.com/altinity/clickhouse-operator/pkg/controller/chk"
+	backupController "github.com/altinity/clickhouse-operator/pkg/controller/backup"
 )
 
 var (
@@ -43,6 +45,10 @@ func initKeeper(ctx context.Context) error {
 	}
 	if err = api.AddToScheme(scheme); err != nil {
 		logger.Error(err, "init keeper - unable to api.AddToScheme")
+		return err
+	}
+	if err = chiApi.AddToScheme(scheme); err != nil {
+		logger.Error(err, "init keeper - unable to chiApi.AddToScheme")
 		return err
 	}
 
@@ -69,6 +75,18 @@ func initKeeper(ctx context.Context) error {
 		)
 	if err != nil {
 		logger.Error(err, "init keeper - unable to ctrlRuntime.NewControllerManagedBy")
+		return err
+	}
+
+	// Setup backup controller
+	backupReconciler := backupController.NewNativeBackupReconciler(
+		manager.GetClient(),
+		manager.GetScheme(),
+		manager.GetEventRecorderFor("clickhouse-backup-controller"),
+	)
+	err = backupReconciler.SetupWithManager(manager)
+	if err != nil {
+		logger.Error(err, "init keeper - unable to setup backup controller")
 		return err
 	}
 

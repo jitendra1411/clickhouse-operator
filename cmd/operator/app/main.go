@@ -25,6 +25,7 @@ import (
 
 	log "github.com/altinity/clickhouse-operator/pkg/announcer"
 	"github.com/altinity/clickhouse-operator/pkg/version"
+	"github.com/altinity/clickhouse-operator/pkg/controller/backup"
 )
 
 // CLI parameter variables
@@ -77,6 +78,16 @@ func Run() {
 	launchClickHouse(ctx, &wg)
 	launchClickHouseReconcilerMetricsExporter(ctx, &wg)
 	launchKeeper(ctx, &wg)
+
+	// Setup native backup controller
+	if err := backup.NewNativeBackupReconciler(
+		mgr.GetClient(),
+		mgr.GetScheme(),
+		mgr.GetEventRecorderFor("clickhouse-backup-controller"),
+	).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ClickHouseBackup")
+		os.Exit(1)
+	}
 
 	// Wait for completion
 	<-ctx.Done()

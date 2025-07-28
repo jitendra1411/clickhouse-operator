@@ -1,0 +1,54 @@
+# Basic Full Backup Example
+apiVersion: clickhouse.altinity.com/v1
+kind: ClickHouseBackup
+metadata:
+  name: basic-full-backup
+  namespace: clickhouse-backup-test
+spec:
+  clickHouseInstallation:
+    name: test-backup-chi
+    namespace: clickhouse-backup-test
+  type: full
+  tables:
+    - "test_backup.*"
+  includeSchema: true
+  includeRBAC: false
+  includeConfigs: false
+  compression:
+    type: gzip
+    level: 6
+  resume: true
+
+---
+# Basic Schema-Only Backup
+apiVersion: clickhouse.altinity.com/v1
+kind: ClickHouseBackup
+metadata:
+  name: basic-schema-backup
+  namespace: clickhouse-backup-test
+spec:
+  clickHouseInstallation:
+    name: test-backup-chi
+    namespace: clickhouse-backup-test
+  type: schema
+  includeSchema: true
+  includeRBAC: true
+  includeConfigs: true
+
+---
+# Basic Incremental Backup (requires full backup first)
+apiVersion: clickhouse.altinity.com/v1
+kind: ClickHouseBackup
+metadata:
+  name: basic-incremental-backup
+  namespace: clickhouse-backup-test
+spec:
+  clickHouseInstallation:
+    name: test-backup-chi
+    namespace: clickhouse-backup-test
+  type: incremental
+  # diffFrom: "full-backup-name"  # Uncomment and set to your full backup name
+  tables:
+    - "test_backup.*"
+  compression:
+    type: lz4

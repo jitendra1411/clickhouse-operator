@@ -1,0 +1,117 @@
+# Daily Scheduled Backup at 2 AM
+apiVersion: clickhouse.altinity.com/v1
+kind: ClickHouseBackup
+metadata:
+  name: daily-scheduled-backup
+  namespace: clickhouse-backup-test
+spec:
+  clickHouseInstallation:
+    name: test-backup-chi
+    namespace: clickhouse-backup-test
+  type: full
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  backupPolicy:
+    retentionPolicy:
+      keepLocal: 3
+      keepRemote: 30
+      maxAge: "30d"
+    maxConcurrentBackups: 1
+  storage:
+    type: s3
+    s3:
+      endpoint: "http://minio.minio-test:9000"
+      bucket: "clickhouse-backups"
+      path: "scheduled/daily"
+      accessKey: "testuser"
+      secretKey: "testpass123"
+      forcePathStyle: true
+      disableSSL: true
+  tables:
+    - "test_backup.*"
+  includeSchema: true
+  compression:
+    type: gzip
+    level: 6
+
+---
+# Hourly Incremental Scheduled Backup
+apiVersion: clickhouse.altinity.com/v1
+kind: ClickHouseBackup
+metadata:
+  name: hourly-incremental-backup
+  namespace: clickhouse-backup-test
+spec:
+  clickHouseInstallation:
+    name: test-backup-chi
+    namespace: clickhouse-backup-test
+  type: incremental
+  schedule: "0 * * * *"  # Every hour
+  backupPolicy:
+    retentionPolicy:
+      keepRemote: 48  # Keep 48 hourly backups (2 days)
+  storage:
+    type: s3
+    s3:
+      endpoint: "http://minio.minio-test:9000"
+      bucket: "clickhouse-backups"
+      path: "scheduled/hourly"
+      accessKey: "testuser"
+      secretKey: "testpass123"
+      forcePathStyle: true
+      disableSSL: true
+  tables:
+    - "test_backup.events"  # Only backup events table
+  compression:
+    type: lz4
+
+---
+# Weekly Schema Backup on Sundays
+apiVersion: clickhouse.altinity.com/v1
+kind: ClickHouseBackup
+metadata:
+  name: weekly-schema-backup
+  namespace: clickhouse-backup-test
+spec:
+  clickHouseInstallation:
+    name: test-backup-chi
+    namespace: clickhouse-backup-test
+  type: schema
+  schedule: "0 3 * * 0"  # Sundays at 3 AM
+  backupPolicy:
+    retentionPolicy:
+      keepRemote: 12  # Keep 3 months of weekly backups
+  storage:
+    type: s3
+    s3:
+      endpoint: "http://minio.minio-test:9000"
+      bucket: "clickhouse-backups"
+      path: "scheduled/weekly-schema"
+      accessKey: "testuser"
+      secretKey: "testpass123"
+      forcePathStyle: true
+      disableSSL: true
+  includeSchema: true
+  includeRBAC: true
+  includeConfigs: true
+
+---
+# Fast Test Schedule (Every 2 minutes - for testing only)
+apiVersion: clickhouse.altinity.com/v1
+kind: ClickHouseBackup
+metadata:
+  name: test-fast-schedule
+  namespace: clickhouse-backup-test
+spec:
+  clickHouseInstallation:
+    name: test-backup-chi
+    namespace: clickhouse-backup-test
+  type: full
+  schedule: "*/2 * * * *"  # Every 2 minutes
+  backupPolicy:
+    retentionPolicy:
+      keepLocal: 2
+      keepRemote: 5
+  tables:
+    - "test_backup.users"  # Small table for fast testing
+  compression:
+    type: none  # No compression for speed

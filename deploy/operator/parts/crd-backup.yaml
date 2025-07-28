@@ -1,0 +1,345 @@
+# ClickHouseBackup CRD
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: clickhousebackups.clickhouse.altinity.com
+  labels:
+    clickhouse.altinity.com/chop: 0.25.2
+spec:
+  group: clickhouse.altinity.com
+  scope: Namespaced
+  names:
+    kind: ClickHouseBackup
+    singular: clickhousebackup
+    plural: clickhousebackups
+    shortNames:
+      - chb
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: status
+          type: string
+          description: Backup status
+          jsonPath: .status.status
+        - name: phase
+          type: string
+          description: Current phase
+          jsonPath: .status.phase
+        - name: backup-name
+          type: string
+          description: Generated backup name
+          priority: 1
+          jsonPath: .status.backupName
+        - name: type
+          type: string
+          description: Backup type
+          jsonPath: .spec.type
+        - name: chi
+          type: string
+          description: Target ClickHouse installation
+          jsonPath: .spec.clickHouseInstallation.name
+        - name: schedule
+          type: string
+          description: Backup schedule
+          priority: 1
+          jsonPath: .spec.schedule
+        - name: last-success
+          type: date
+          description: Last successful backup
+          priority: 1
+          jsonPath: .status.lastSuccessfulBackup
+        - name: age
+          type: date
+          description: Age of the resource
+          jsonPath: .metadata.creationTimestamp
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          description: "ClickHouseBackup defines a declarative backup for ClickHouse installations"
+          type: object
+          required:
+            - spec
+          properties:
+            apiVersion:
+              description: |
+                APIVersion defines the versioned schema of this representation
+                of an object. Servers should convert recognized schemas to the latest
+                internal value, and may reject unrecognized values.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+              type: string
+            kind:
+              description: |
+                Kind is a string value representing the REST resource this
+                object represents. Servers may infer this from the endpoint the client
+                submits requests to. Cannot be updated. In CamelCase.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: Spec defines the desired backup configuration
+              type: object
+              required:
+                - clickHouseInstallation
+              properties:
+                taskID:
+                  description: TaskID specifies unique backup task identifier
+                  type: string
+                suspend:
+                  description: Suspend indicates whether the backup should be suspended
+                  type: boolean
+                clickHouseInstallation:
+                  description: ClickHouseInstallation specifies the target CHI for backup
+                  type: object
+                  required:
+                    - name
+                  properties:
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                type:
+                  description: Type specifies the backup type
+                  type: string
+                  enum: ["full", "incremental", "schema", "rbac", "configs"]
+                  default: "full"
+                schedule:
+                  description: Schedule defines when the backup should run (cron format)
+                  type: string
+                backupPolicy:
+                  description: BackupPolicy defines backup behavior and retention settings
+                  type: object
+                  properties:
+                    retentionPolicy:
+                      type: object
+                      properties:
+                        keepLocal:
+                          type: integer
+                          minimum: 0
+                        keepRemote:
+                          type: integer
+                          minimum: 0
+                        maxAge:
+                          type: string
+                    fullBackupInterval:
+                      type: string
+                    maxConcurrentBackups:
+                      type: integer
+                      minimum: 1
+                    watchMode:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        watchInterval:
+                          type: string
+                        fullInterval:
+                          type: string
+                        backupNameTemplate:
+                          type: string
+                        deleteLocal:
+                          type: boolean
+                storage:
+                  description: Storage defines where backups should be stored
+                  type: object
+                  required:
+                    - type
+                  properties:
+                    type:
+                      type: string
+                      enum: ["s3", "gcs", "azure", "ftp", "sftp", "local"]
+                    s3:
+                      type: object
+                      required:
+                        - bucket
+                      properties:
+                        endpoint:
+                          type: string
+                        bucket:
+                          type: string
+                        path:
+                          type: string
+                        region:
+                          type: string
+                        accessKey:
+                          type: string
+                        secretKey:
+                          type: string
+                        forcePathStyle:
+                          type: boolean
+                        disableCertVerification:
+                          type: boolean
+                        disableSSL:
+                          type: boolean
+                    gcs:
+                      type: object
+                      required:
+                        - bucket
+                      properties:
+                        bucket:
+                          type: string
+                        path:
+                          type: string
+                        credentials:
+                          type: string
+                    azure:
+                      type: object
+                      required:
+                        - container
+                      properties:
+                        container:
+                          type: string
+                        path:
+                          type: string
+                        accountName:
+                          type: string
+                        accountKey:
+                          type: string
+                    ftp:
+                      type: object
+                      required:
+                        - host
+                      properties:
+                        host:
+                          type: string
+                        port:
+                          type: integer
+                        username:
+                          type: string
+                        password:
+                          type: string
+                        path:
+                          type: string
+                    sftp:
+                      type: object
+                      required:
+                        - host
+                      properties:
+                        host:
+                          type: string
+                        port:
+                          type: integer
+                        username:
+                          type: string
+                        password:
+                          type: string
+                        key:
+                          type: string
+                        path:
+                          type: string
+                    local:
+                      type: object
+                      required:
+                        - path
+                      properties:
+                        path:
+                          type: string
+                tables:
+                  description: Tables specifies which tables to backup (supports patterns)
+                  type: array
+                  items:
+                    type: string
+                partitions:
+                  description: Partitions specifies which partitions to backup
+                  type: array
+                  items:
+                    type: string
+                includeSchema:
+                  description: IncludeSchema specifies whether to include schema in backup
+                  type: boolean
+                includeRBAC:
+                  description: IncludeRBAC specifies whether to include RBAC objects in backup
+                  type: boolean
+                includeConfigs:
+                  description: IncludeConfigs specifies whether to include configuration files in backup
+                  type: boolean
+                diffFrom:
+                  description: DiffFrom specifies the base backup for incremental backups
+                  type: string
+                resume:
+                  description: Resume enables resumable backups
+                  type: boolean
+                compression:
+                  description: Compression defines backup compression settings
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                      enum: ["none", "gzip", "lz4", "zstd", "brotli"]
+                    level:
+                      type: integer
+                      minimum: 1
+                      maximum: 9
+            status:
+              description: Status defines the observed state of ClickHouseBackup
+              type: object
+              properties:
+                taskID:
+                  type: string
+                status:
+                  type: string
+                  enum: ["Pending", "Running", "Completed", "Failed", "Suspended"]
+                phase:
+                  type: string
+                  enum: ["Initializing", "Creating", "Uploading", "Completed", "Failed"]
+                message:
+                  type: string
+                error:
+                  type: string
+                backupName:
+                  type: string
+                localPath:
+                  type: string
+                remotePath:
+                  type: string
+                startTime:
+                  type: string
+                  format: date-time
+                completionTime:
+                  type: string
+                  format: date-time
+                duration:
+                  type: string
+                localSizeBytes:
+                  type: integer
+                  format: int64
+                remoteSizeBytes:
+                  type: integer
+                  format: int64
+                tables:
+                  type: array
+                  items:
+                    type: string
+                nextScheduledBackup:
+                  type: string
+                  format: date-time
+                lastSuccessfulBackup:
+                  type: string
+                  format: date-time
+                consecutiveFailures:
+                  type: integer
+                history:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      backupName:
+                        type: string
+                      status:
+                        type: string
+                      startTime:
+                        type: string
+                        format: date-time
+                      completionTime:
+                        type: string
+                        format: date-time
+                      duration:
+                        type: string
+                      sizeBytes:
+                        type: integer
+                        format: int64
+                      error:
+                        type: string

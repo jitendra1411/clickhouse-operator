@@ -1,0 +1,148 @@
+apiVersion: clickhouse.altinity.com/v1
+kind: ClickHouseBackup
+metadata:
+  name: daily-full-backup
+  namespace: clickhouse-system
+spec:
+  # Reference to the ClickHouse installation to backup
+  clickHouseInstallation:
+    name: my-clickhouse-cluster
+    namespace: clickhouse-system
+  
+  # Backup type - full, incremental, schema, rbac, or configs
+  type: full
+  
+  # Schedule for automated backups (cron format)
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  
+  # Backup policy configuration
+  backupPolicy:
+    retentionPolicy:
+      keepLocal: 3      # Keep 3 local backups
+      keepRemote: 30    # Keep 30 remote backups
+      maxAge: "30d"     # Delete backups older than 30 days
+    maxConcurrentBackups: 1
+    
+    # Watch mode for continuous backup sequences
+    watchMode:
+      enabled: false
+      watchInterval: "1h"           # Incremental backups every 1 hour
+      fullInterval: "24h"           # Full backups every 24 hours
+      backupNameTemplate: "shard{shard}-{type}-{time:20060102150405}"
+      deleteLocal: true             # Delete local backups after upload
+  
+  # Storage configuration for S3-compatible storage
+  storage:
+    type: s3
+    s3:
+      endpoint: "https://s3.amazonaws.com"
+      bucket: "my-clickhouse-backups"
+      path: "production/backups"
+      region: "us-west-2"
+      accessKey: "your-access-key"
+      secretKey: "your-secret-key"
+      forcePathStyle: false
+      disableCertVerification: false
+  
+  # Table selection (supports patterns)
+  tables:
+    - "default.*"
+    - "analytics.events"
+    - "logs.*"
+  
+  # Include additional components
+  includeSchema: true
+  includeRBAC: true
+  includeConfigs: false
+  
+  # Compression settings
+  compression:
+    type: gzip
+    level: 6
+  
+  # Enable resumable backups
+  resume: true
+
+---
+apiVersion: clickhouse.altinity.com/v1
+kind: ClickHouseBackup
+metadata:
+  name: incremental-backup-sequence
+  namespace: clickhouse-system
+spec:
+  # Reference to the ClickHouse installation
+  clickHouseInstallation:
+    name: my-clickhouse-cluster
+    namespace: clickhouse-system
+  
+  # Incremental backup type
+  type: incremental
+  
+  # Enable watch mode for continuous backup sequences
+  backupPolicy:
+    retentionPolicy:
+      keepRemote: 100
+    watchMode:
+      enabled: true
+      watchInterval: "30m"           # Incremental every 30 minutes
+      fullInterval: "6h"             # Full backup every 6 hours
+      backupNameTemplate: "auto-{type}-{time:20060102150405}"
+      deleteLocal: true
+  
+  # Storage configuration for Minio
+  storage:
+    type: s3
+    s3:
+      endpoint: "https://minio.example.com"
+      bucket: "clickhouse-backups"
+      path: "incremental"
+      accessKey: "minio-access-key"
+      secretKey: "minio-secret-key"
+      forcePathStyle: true
+      disableCertVerification: false
+  
+  # Include only data, no schema
+  includeSchema: false
+  includeRBAC: false
+  includeConfigs: false
+  
+  compression:
+    type: lz4
+
+---
+apiVersion: clickhouse.altinity.com/v1
+kind: ClickHouseBackup
+metadata:
+  name: schema-only-backup
+  namespace: clickhouse-system
+spec:
+  # Reference to the ClickHouse installation
+  clickHouseInstallation:
+    name: my-clickhouse-cluster
+    namespace: clickhouse-system
+  
+  # Schema-only backup
+  type: schema
+  
+  # Daily schema backup
+  schedule: "0 1 * * *"  # Daily at 1 AM
+  
+  backupPolicy:
+    retentionPolicy:
+      keepRemote: 7   # Keep 7 schema backups
+  
+  # Storage for schema backups
+  storage:
+    type: s3
+    s3:
+      endpoint: "https://s3.amazonaws.com"
+      bucket: "my-clickhouse-backups"
+      path: "schema"
+      region: "us-west-2"
+      accessKey: "your-access-key"
+      secretKey: "your-secret-key"
+  
+  # Schema backup includes structure only
+  includeSchema: true
+  includeRBAC: true
+  includeConfigs: true
