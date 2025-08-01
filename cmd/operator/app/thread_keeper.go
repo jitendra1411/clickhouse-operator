@@ -21,8 +21,8 @@ import (
 	api "github.com/altinity/clickhouse-operator/pkg/apis/clickhouse-keeper.altinity.com/v1"
 	chiApi "github.com/altinity/clickhouse-operator/pkg/apis/clickhouse.altinity.com/v1"
 	"github.com/altinity/clickhouse-operator/pkg/chop"
-	controller "github.com/altinity/clickhouse-operator/pkg/controller/chk"
 	backupController "github.com/altinity/clickhouse-operator/pkg/controller/backup"
+	controller "github.com/altinity/clickhouse-operator/pkg/controller/chk"
 )
 
 var (

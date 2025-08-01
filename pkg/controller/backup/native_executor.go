@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,7 +18,6 @@ import (
 	_ "github.com/mailru/go-clickhouse/v2"
 
 	chiv1 "github.com/altinity/clickhouse-operator/pkg/apis/clickhouse.altinity.com/v1"
-	"github.com/altinity/clickhouse-operator/pkg/util"
 )
 
 // NativeBackupExecutor implements backup functionality directly within the operator
@@ -95,7 +93,7 @@ func (e *NativeBackupExecutor) ExecuteBackup(ctx context.Context) (*BackupResult
 	}
 
 	// Backup schema if requested
-	if e.backup.Spec.IncludeSchema {
+	if e.backup.Spec.IncludeSchema != nil && e.backup.Spec.IncludeSchema.Value() {
 		schemaSize, err := e.backupSchema(ctx, db, backupDir)
 		if err != nil {
 			result.Error = fmt.Errorf("failed to backup schema: %w", err)
@@ -149,8 +147,8 @@ func (e *NativeBackupExecutor) connectToClickHouse(ctx context.Context) (*sql.DB
 // generateBackupName creates a unique backup name
 func (e *NativeBackupExecutor) generateBackupName() string {
 	timestamp := time.Now().Format("20060102-150405")
-	if e.backup.Spec.BackupNameTemplate != "" {
-		name := strings.ReplaceAll(e.backup.Spec.BackupNameTemplate, "{time}", timestamp)
+	if e.backup.Spec.BackupPolicy.WatchMode.BackupNameTemplate != nil && e.backup.Spec.BackupPolicy.WatchMode.BackupNameTemplate.String() != "" {
+		name := strings.ReplaceAll(e.backup.Spec.BackupPolicy.WatchMode.BackupNameTemplate.String(), "{time}", timestamp)
 		name = strings.ReplaceAll(name, "{chi}", e.chi.Name)
 		name = strings.ReplaceAll(name, "{type}", string(e.backup.Spec.Type))
 		return name
@@ -444,15 +442,15 @@ func (e *NativeBackupExecutor) uploadToS3(ctx context.Context, backupDir, backup
 	// Create AWS session
 	awsConfig := &aws.Config{
 		Region:           aws.String("us-east-1"), // Default region
-		Credentials:      credentials.NewStaticCredentials(s3Config.AccessKey, s3Config.SecretKey, ""),
-		S3ForcePathStyle: aws.Bool(s3Config.ForcePathStyle),
+		Credentials:      credentials.NewStaticCredentials(s3Config.AccessKey.String(), s3Config.SecretKey.String(), ""),
+		S3ForcePathStyle: aws.Bool(s3Config.ForcePathStyle.Value()),
 	}
 
-	if s3Config.Endpoint != "" {
-		awsConfig.Endpoint = aws.String(s3Config.Endpoint)
+	if s3Config.Endpoint != nil && s3Config.Endpoint.String() != "" {
+		awsConfig.Endpoint = aws.String(s3Config.Endpoint.String())
 	}
 
-	if s3Config.DisableSSL {
+	if s3Config.DisableSSL != nil && s3Config.DisableSSL != nil && s3Config.DisableSSL.Value() && s3Config.DisableSSL.Value() {
 		awsConfig.DisableSSL = aws.Bool(true)
 	}
 
@@ -464,7 +462,7 @@ func (e *NativeBackupExecutor) uploadToS3(ctx context.Context, backupDir, backup
 	uploader := s3manager.NewUploader(sess)
 
 	// Upload all files in the backup directory
-	return e.uploadDirectoryToS3(ctx, uploader, backupDir, s3Config.Bucket, s3Config.Path, backupName)
+	return e.uploadDirectoryToS3(ctx, uploader, backupDir, s3Config.Bucket.String(), s3Config.Path.String(), backupName)
 }
 
 // uploadDirectoryToS3 uploads all files in a directory to S3
@@ -545,7 +543,7 @@ func (e *NativeBackupExecutor) ListBackups(ctx context.Context) ([]BackupInfo, e
 		remoteBackups, err := e.listRemoteBackups(ctx)
 		if err != nil {
 			// Don't fail if remote listing fails, just log
-			util.V(1).Info("Failed to list remote backups", "error", err)
+			// Failed to list remote backups, continuing
 		} else {
 			backups = append(backups, remoteBackups...)
 		}
@@ -617,15 +615,15 @@ func (e *NativeBackupExecutor) listRemoteBackups(ctx context.Context) ([]BackupI
 	// Create AWS session (similar to uploadToS3)
 	awsConfig := &aws.Config{
 		Region:           aws.String("us-east-1"),
-		Credentials:      credentials.NewStaticCredentials(s3Config.AccessKey, s3Config.SecretKey, ""),
-		S3ForcePathStyle: aws.Bool(s3Config.ForcePathStyle),
+		Credentials:      credentials.NewStaticCredentials(s3Config.AccessKey.String(), s3Config.SecretKey.String(), ""),
+		S3ForcePathStyle: aws.Bool(s3Config.ForcePathStyle.Value()),
 	}
 	
-	if s3Config.Endpoint != "" {
-		awsConfig.Endpoint = aws.String(s3Config.Endpoint)
+	if s3Config.Endpoint != nil && s3Config.Endpoint.String() != "" {
+		awsConfig.Endpoint = aws.String(s3Config.Endpoint.String())
 	}
 	
-	if s3Config.DisableSSL {
+	if s3Config.DisableSSL != nil && s3Config.DisableSSL != nil && s3Config.DisableSSL.Value() && s3Config.DisableSSL.Value() {
 		awsConfig.DisableSSL = aws.Bool(true)
 	}
 	
@@ -637,13 +635,13 @@ func (e *NativeBackupExecutor) listRemoteBackups(ctx context.Context) ([]BackupI
 	svc := s3.New(sess)
 	
 	// List objects in the backup path
-	prefix := s3Config.Path
+	prefix := s3Config.Path.String()
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
 	}
 	
 	input := &s3.ListObjectsV2Input{
-		Bucket:    aws.String(s3Config.Bucket),
+		Bucket:    aws.String(s3Config.Bucket.String()),
 		Prefix:    aws.String(prefix),
 		Delimiter: aws.String("/"),
 	}
@@ -670,7 +668,7 @@ func (e *NativeBackupExecutor) listRemoteBackups(ctx context.Context) ([]BackupI
 		}
 		
 		// Get the size of this backup by listing its contents
-		size, created := e.getBackupSizeAndTime(ctx, svc, s3Config.Bucket, prefixStr)
+		size, created := e.getBackupSizeAndTime(ctx, svc, s3Config.Bucket.String(), prefixStr)
 		backupSizes[backupName] = size
 		
 		backup := BackupInfo{
@@ -678,7 +676,7 @@ func (e *NativeBackupExecutor) listRemoteBackups(ctx context.Context) ([]BackupI
 			Created:  created,
 			Size:     size,
 			Location: "remote",
-			Path:     fmt.Sprintf("s3://%s/%s", s3Config.Bucket, prefixStr),
+			Path:     fmt.Sprintf("s3://%s/%s", s3Config.Bucket.String(), prefixStr),
 		}
 		
 		backups = append(backups, backup)
@@ -738,3 +736,4 @@ func (e *NativeBackupExecutor) calculateDirectorySize(dirPath string) int64 {
 	
 	return size
 }
+

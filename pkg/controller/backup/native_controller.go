@@ -13,11 +13,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	chiv1 "github.com/altinity/clickhouse-operator/pkg/apis/clickhouse.altinity.com/v1"
 )
@@ -48,7 +44,6 @@ func NewNativeBackupReconciler(client client.Client, scheme *runtime.Scheme, rec
 
 // Reconcile handles ClickHouseBackup resources
 func (r *NativeBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
 
 	// Fetch the ClickHouseBackup instance
 	backup := &chiv1.ClickHouseBackup{}
@@ -90,13 +85,13 @@ func (r *NativeBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	// Handle scheduled backups
-	if backup.Spec.Schedule != "" {
+	if backup.Spec.Schedule != nil && backup.Spec.Schedule.String() != "" {
 		return r.handleScheduledBackup(ctx, backup, chi)
 	}
 
 	// Handle watch mode backups
 	if backup.Spec.BackupPolicy != nil && backup.Spec.BackupPolicy.WatchMode != nil && 
-		backup.Spec.BackupPolicy.WatchMode.Enabled {
+		backup.Spec.BackupPolicy.WatchMode.Enabled != nil && backup.Spec.BackupPolicy.WatchMode.Enabled.Value() {
 		return r.handleWatchModeBackup(ctx, backup, chi)
 	}
 
@@ -106,7 +101,6 @@ func (r *NativeBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 // handleOneTimeBackup processes a single backup execution
 func (r *NativeBackupReconciler) handleOneTimeBackup(ctx context.Context, backup *chiv1.ClickHouseBackup, chi *chiv1.ClickHouseInstallation) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
 	
 	// Skip if already completed or failed
 	if backup.Status.Status == chiv1.BackupStatusCompleted || backup.Status.Status == chiv1.BackupStatusFailed {
@@ -119,7 +113,7 @@ func (r *NativeBackupReconciler) handleOneTimeBackup(ctx context.Context, backup
 	}
 
 	// Start the backup
-	logger.Info("Starting one-time backup", "backup", backup.Name)
+	log.FromContext(ctx).Info("Starting one-time backup", "backup", backup.Name)
 	
 	// Update status to running
 	if err := r.updateBackupStatus(ctx, backup, chiv1.BackupStatusRunning, chiv1.BackupPhaseBackingUp, ""); err != nil {
@@ -134,7 +128,6 @@ func (r *NativeBackupReconciler) handleOneTimeBackup(ctx context.Context, backup
 
 // handleScheduledBackup manages cron-based scheduled backups
 func (r *NativeBackupReconciler) handleScheduledBackup(ctx context.Context, backup *chiv1.ClickHouseBackup, chi *chiv1.ClickHouseInstallation) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
 	jobKey := fmt.Sprintf("%s/%s", backup.Namespace, backup.Name)
 
 	// Check if job is already scheduled
@@ -147,16 +140,16 @@ func (r *NativeBackupReconciler) handleScheduledBackup(ctx context.Context, back
 			reconciler: r,
 		}
 
-		entryID, err := r.scheduler.AddFunc(backup.Spec.Schedule, job.Execute)
+		entryID, err := r.scheduler.AddFunc(backup.Spec.Schedule.String(), job.Execute)
 		if err != nil {
-			logger.Error(err, "Failed to schedule backup", "backup", backup.Name, "schedule", backup.Spec.Schedule)
+			log.FromContext(ctx).Error(err, "Failed to schedule backup", "backup", backup.Name, "schedule", backup.Spec.Schedule)
 			return ctrl.Result{}, err
 		}
 
 		job.entryID = entryID
 		r.setScheduledJob(jobKey, job)
 
-		logger.Info("Scheduled backup job", "backup", backup.Name, "schedule", backup.Spec.Schedule)
+		log.FromContext(ctx).Info("Scheduled backup job", "backup", backup.Name, "schedule", backup.Spec.Schedule)
 
 		// Update next scheduled time in status
 		next := r.scheduler.Entry(entryID).Next
@@ -181,7 +174,6 @@ func (r *NativeBackupReconciler) handleScheduledBackup(ctx context.Context, back
 
 // handleWatchModeBackup manages continuous watch mode backups
 func (r *NativeBackupReconciler) handleWatchModeBackup(ctx context.Context, backup *chiv1.ClickHouseBackup, chi *chiv1.ClickHouseInstallation) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
 	jobKey := fmt.Sprintf("%s/%s", backup.Namespace, backup.Name)
 
 	// Check if watch job is already running
@@ -192,7 +184,7 @@ func (r *NativeBackupReconciler) handleWatchModeBackup(ctx context.Context, back
 
 		go r.runWatchMode(watchCtx, backup.DeepCopy(), chi.DeepCopy())
 
-		logger.Info("Started watch mode backup", "backup", backup.Name)
+		log.FromContext(ctx).Info("Started watch mode backup", "backup", backup.Name)
 		r.Recorder.Event(backup, corev1.EventTypeNormal, "WatchStarted", "Watch mode backup started")
 	}
 
@@ -209,7 +201,6 @@ func (r *NativeBackupReconciler) handleWatchModeBackup(ctx context.Context, back
 // executeBackupAsync runs backup execution in a separate goroutine
 func (r *NativeBackupReconciler) executeBackupAsync(backup *chiv1.ClickHouseBackup, chi *chiv1.ClickHouseInstallation) {
 	ctx := context.Background()
-	logger := log.FromContext(ctx)
 
 	// Create backup executor
 	executor := NewNativeBackupExecutor(backup.Namespace, chi, backup)
@@ -224,7 +215,7 @@ func (r *NativeBackupReconciler) executeBackupAsync(backup *chiv1.ClickHouseBack
 	
 	// Update backup status based on result
 	if err != nil {
-		logger.Error(err, "Backup execution failed", "backup", backup.Name)
+		log.FromContext(ctx).Error(err, "Backup execution failed", "backup", backup.Name)
 		r.updateBackupStatus(ctx, backup, chiv1.BackupStatusFailed, chiv1.BackupPhaseFailed, err.Error())
 		r.Recorder.Event(backup, corev1.EventTypeWarning, "BackupFailed", err.Error())
 		return
@@ -234,20 +225,19 @@ func (r *NativeBackupReconciler) executeBackupAsync(backup *chiv1.ClickHouseBack
 	backup.Status.Status = chiv1.BackupStatusCompleted
 	backup.Status.Phase = chiv1.BackupPhaseCompleted
 	backup.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-	backup.Status.Duration = metav1.Duration{Duration: result.Duration}
+	backup.Status.Duration = &metav1.Duration{Duration: result.Duration}
 	backup.Status.BackupName = result.BackupName
-	backup.Status.BackupSize = result.Size
-	backup.Status.StoragePath = result.StoragePath
+	backup.Status.LocalSizeBytes = &result.Size
+	backup.Status.LocalPath = result.StoragePath
 
 	// Add to history
 	historyEntry := chiv1.BackupHistoryEntry{
 		BackupName:     result.BackupName,
 		StartTime:      metav1.Time{Time: startTime},
-		CompletionTime: metav1.Time{Time: time.Now()},
-		Duration:       metav1.Duration{Duration: result.Duration},
+		CompletionTime: &metav1.Time{Time: time.Now()},
+		Duration:       &metav1.Duration{Duration: result.Duration},
 		Status:         chiv1.BackupStatusCompleted,
-		Size:           result.Size,
-		StoragePath:    result.StoragePath,
+		SizeBytes:      &result.Size,
 	}
 
 	backup.Status.History = append(backup.Status.History, historyEntry)
@@ -260,11 +250,11 @@ func (r *NativeBackupReconciler) executeBackupAsync(backup *chiv1.ClickHouseBack
 	backup.Status.LastSuccessfulBackup = &metav1.Time{Time: time.Now()}
 
 	if err := r.Status().Update(ctx, backup); err != nil {
-		logger.Error(err, "Failed to update backup status")
+		log.FromContext(ctx).Error(err, "Failed to update backup status")
 		return
 	}
 
-	logger.Info("Backup completed successfully", 
+	log.FromContext(ctx).Info("Backup completed successfully", 
 		"backup", backup.Name, 
 		"backupName", result.BackupName,
 		"size", result.Size,
@@ -277,18 +267,17 @@ func (r *NativeBackupReconciler) executeBackupAsync(backup *chiv1.ClickHouseBack
 
 // runWatchMode runs continuous backup monitoring
 func (r *NativeBackupReconciler) runWatchMode(ctx context.Context, backup *chiv1.ClickHouseBackup, chi *chiv1.ClickHouseInstallation) {
-	logger := log.FromContext(ctx)
 	watchConfig := backup.Spec.BackupPolicy.WatchMode
 
-	watchInterval, err := time.ParseDuration(watchConfig.WatchInterval)
+	watchInterval, err := time.ParseDuration(watchConfig.WatchInterval.String())
 	if err != nil {
-		logger.Error(err, "Invalid watch interval", "interval", watchConfig.WatchInterval)
+		log.FromContext(ctx).Error(err, "Invalid watch interval", "interval", watchConfig.WatchInterval.String())
 		return
 	}
 
-	fullInterval, err := time.ParseDuration(watchConfig.FullInterval)
+	fullInterval, err := time.ParseDuration(watchConfig.FullInterval.String())
 	if err != nil {
-		logger.Error(err, "Invalid full interval", "interval", watchConfig.FullInterval)
+		log.FromContext(ctx).Error(err, "Invalid full interval", "interval", watchConfig.FullInterval.String())
 		return
 	}
 
@@ -300,7 +289,7 @@ func (r *NativeBackupReconciler) runWatchMode(ctx context.Context, backup *chiv1
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Info("Watch mode stopped", "backup", backup.Name)
+			log.FromContext(ctx).Info("Watch mode stopped", "backup", backup.Name)
 			return
 		case <-ticker.C:
 			// Determine backup type
@@ -317,12 +306,12 @@ func (r *NativeBackupReconciler) runWatchMode(ctx context.Context, backup *chiv1
 			// Generate backup name
 			timestamp := time.Now().Format("20060102-150405")
 			backupName := fmt.Sprintf("watch-%s-%s-%s", backup.Name, backupType, timestamp)
-			if watchConfig.BackupNameTemplate != "" {
-				backupName = watchConfig.BackupNameTemplate
+			if watchConfig.BackupNameTemplate != nil && watchConfig.BackupNameTemplate.String() != "" {
+				backupName = watchConfig.BackupNameTemplate.String()
 				backupName = fmt.Sprintf(backupName, backup.Name, backupType, timestamp)
 			}
 
-			logger.Info("Executing watch mode backup", 
+			log.FromContext(ctx).Info("Executing watch mode backup", 
 				"backup", backup.Name, 
 				"type", backupType,
 				"backupName", backupName)
@@ -332,12 +321,12 @@ func (r *NativeBackupReconciler) runWatchMode(ctx context.Context, backup *chiv1
 			result, err := executor.ExecuteBackup(ctx)
 
 			if err != nil {
-				logger.Error(err, "Watch mode backup failed", "backup", backup.Name)
+				log.FromContext(ctx).Error(err, "Watch mode backup failed", "backup", backup.Name)
 				r.Recorder.Event(backup, corev1.EventTypeWarning, "WatchBackupFailed", err.Error())
 				continue
 			}
 
-			logger.Info("Watch mode backup completed", 
+			log.FromContext(ctx).Info("Watch mode backup completed", 
 				"backup", backup.Name,
 				"backupName", result.BackupName,
 				"size", result.Size)
@@ -345,17 +334,16 @@ func (r *NativeBackupReconciler) runWatchMode(ctx context.Context, backup *chiv1
 			// Update backup status with latest execution
 			backup.Status.LastSuccessfulBackup = &metav1.Time{Time: time.Now()}
 			backup.Status.BackupName = result.BackupName
-			backup.Status.BackupSize = result.Size
+			backup.Status.LocalSizeBytes = &result.Size
 
 			// Add to history
 			historyEntry := chiv1.BackupHistoryEntry{
 				BackupName:     result.BackupName,
 				StartTime:      metav1.Time{Time: time.Now().Add(-result.Duration)},
-				CompletionTime: metav1.Time{Time: time.Now()},
-				Duration:       metav1.Duration{Duration: result.Duration},
+				CompletionTime: &metav1.Time{Time: time.Now()},
+				Duration:       &metav1.Duration{Duration: result.Duration},
 				Status:         chiv1.BackupStatusCompleted,
-				Size:           result.Size,
-				StoragePath:    result.StoragePath,
+				SizeBytes:      &result.Size,
 			}
 
 			backup.Status.History = append(backup.Status.History, historyEntry)
@@ -407,9 +395,8 @@ type ScheduledBackupJob struct {
 // Execute runs the scheduled backup
 func (job *ScheduledBackupJob) Execute() {
 	ctx := context.Background()
-	logger := log.FromContext(ctx)
 
-	logger.Info("Executing scheduled backup", "backup", job.backup.Name)
+	log.FromContext(ctx).Info("Executing scheduled backup", "backup", job.backup.Name)
 
 	// Execute the backup
 	job.reconciler.executeBackupAsync(job.backup, job.chi)

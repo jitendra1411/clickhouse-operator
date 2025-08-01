@@ -16,7 +16,6 @@ package v1
 
 import (
 	"sync"
-	"time"
 
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -31,7 +30,7 @@ type ClickHouseBackup struct {
 	meta.TypeMeta   `json:",inline"            yaml:",inline"`
 	meta.ObjectMeta `json:"metadata,omitempty" yaml:"metadata,omitempty"`
 
-	Spec   ClickHouseBackupSpec   `json:"spec"               yaml:"spec"`
+	Spec   ClickHouseBackupSpec    `json:"spec"               yaml:"spec"`
 	Status *ClickHouseBackupStatus `json:"status,omitempty"   yaml:"status,omitempty"`
 
 	runtime             *ClickHouseBackupRuntime `json:"-" yaml:"-"`
@@ -189,25 +188,25 @@ type BackupStorage struct {
 type StorageType string
 
 const (
-	StorageTypeS3     StorageType = "s3"
-	StorageTypeGCS    StorageType = "gcs"
-	StorageTypeAzure  StorageType = "azure"
-	StorageTypeFTP    StorageType = "ftp"
-	StorageTypeSFTP   StorageType = "sftp"
-	StorageTypeLocal  StorageType = "local"
+	StorageTypeS3    StorageType = "s3"
+	StorageTypeGCS   StorageType = "gcs"
+	StorageTypeAzure StorageType = "azure"
+	StorageTypeFTP   StorageType = "ftp"
+	StorageTypeSFTP  StorageType = "sftp"
+	StorageTypeLocal StorageType = "local"
 )
 
 // S3Config defines S3-compatible storage configuration
 type S3Config struct {
-	Endpoint                  *types.String `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
-	Bucket                    *types.String `json:"bucket" yaml:"bucket"`
-	Path                      *types.String `json:"path,omitempty" yaml:"path,omitempty"`
-	Region                    *types.String `json:"region,omitempty" yaml:"region,omitempty"`
-	AccessKey                 *types.String `json:"accessKey,omitempty" yaml:"accessKey,omitempty"`
-	SecretKey                 *types.String `json:"secretKey,omitempty" yaml:"secretKey,omitempty"`
-	ForcePathStyle            *types.StringBool `json:"forcePathStyle,omitempty" yaml:"forcePathStyle,omitempty"`
-	DisableCertVerification   *types.StringBool `json:"disableCertVerification,omitempty" yaml:"disableCertVerification,omitempty"`
-	DisableSSL                *types.StringBool `json:"disableSSL,omitempty" yaml:"disableSSL,omitempty"`
+	Endpoint                *types.String     `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
+	Bucket                  *types.String     `json:"bucket" yaml:"bucket"`
+	Path                    *types.String     `json:"path,omitempty" yaml:"path,omitempty"`
+	Region                  *types.String     `json:"region,omitempty" yaml:"region,omitempty"`
+	AccessKey               *types.String     `json:"accessKey,omitempty" yaml:"accessKey,omitempty"`
+	SecretKey               *types.String     `json:"secretKey,omitempty" yaml:"secretKey,omitempty"`
+	ForcePathStyle          *types.StringBool `json:"forcePathStyle,omitempty" yaml:"forcePathStyle,omitempty"`
+	DisableCertVerification *types.StringBool `json:"disableCertVerification,omitempty" yaml:"disableCertVerification,omitempty"`
+	DisableSSL              *types.StringBool `json:"disableSSL,omitempty" yaml:"disableSSL,omitempty"`
 }
 
 // GCSConfig defines Google Cloud Storage configuration
@@ -304,7 +303,7 @@ type ClickHouseBackupStatus struct {
 	// LocalSizeBytes specifies local backup size in bytes
 	LocalSizeBytes *int64 `json:"localSizeBytes,omitempty" yaml:"localSizeBytes,omitempty"`
 
-	// RemoteSizeBytes specifies remote backup size in bytes  
+	// RemoteSizeBytes specifies remote backup size in bytes
 	RemoteSizeBytes *int64 `json:"remoteSizeBytes,omitempty" yaml:"remoteSizeBytes,omitempty"`
 
 	// Tables specifies which tables were backed up
@@ -327,33 +326,38 @@ type ClickHouseBackupStatus struct {
 type BackupStatus string
 
 const (
-	BackupStatusPending    BackupStatus = "Pending"
-	BackupStatusRunning    BackupStatus = "Running"
-	BackupStatusCompleted  BackupStatus = "Completed"
-	BackupStatusFailed     BackupStatus = "Failed"
-	BackupStatusSuspended  BackupStatus = "Suspended"
+	BackupStatusPending   BackupStatus = "Pending"
+	BackupStatusRunning   BackupStatus = "Running"
+	BackupStatusCompleted BackupStatus = "Completed"
+	BackupStatusFailed    BackupStatus = "Failed"
+	BackupStatusSuspended BackupStatus = "Suspended"
+	BackupStatusScheduled BackupStatus = "Scheduled"
 )
 
 // BackupPhase defines backup operation phases
 type BackupPhase string
 
 const (
+	BackupPhasePending      BackupPhase = "Pending"
 	BackupPhaseInitializing BackupPhase = "Initializing"
 	BackupPhaseCreating     BackupPhase = "Creating"
+	BackupPhaseBackingUp    BackupPhase = "BackingUp"
 	BackupPhaseUploading    BackupPhase = "Uploading"
 	BackupPhaseCompleted    BackupPhase = "Completed"
 	BackupPhaseFailed       BackupPhase = "Failed"
+	BackupPhaseScheduled    BackupPhase = "Scheduled"
+	BackupPhaseWatching     BackupPhase = "Watching"
 )
 
 // BackupHistoryEntry represents a single backup history entry
 type BackupHistoryEntry struct {
-	BackupName     string        `json:"backupName" yaml:"backupName"`
-	Status         BackupStatus  `json:"status" yaml:"status"`
-	StartTime      meta.Time     `json:"startTime" yaml:"startTime"`
-	CompletionTime *meta.Time    `json:"completionTime,omitempty" yaml:"completionTime,omitempty"`
+	BackupName     string         `json:"backupName" yaml:"backupName"`
+	Status         BackupStatus   `json:"status" yaml:"status"`
+	StartTime      meta.Time      `json:"startTime" yaml:"startTime"`
+	CompletionTime *meta.Time     `json:"completionTime,omitempty" yaml:"completionTime,omitempty"`
 	Duration       *meta.Duration `json:"duration,omitempty" yaml:"duration,omitempty"`
-	SizeBytes      *int64        `json:"sizeBytes,omitempty" yaml:"sizeBytes,omitempty"`
-	Error          string        `json:"error,omitempty" yaml:"error,omitempty"`
+	SizeBytes      *int64         `json:"sizeBytes,omitempty" yaml:"sizeBytes,omitempty"`
+	Error          string         `json:"error,omitempty" yaml:"error,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -377,7 +381,7 @@ func (backup *ClickHouseBackup) EnsureRuntime() *ClickHouseBackupRuntime {
 
 	backup.runtimeCreatorMutex.Lock()
 	defer backup.runtimeCreatorMutex.Unlock()
-	
+
 	if backup.runtime == nil {
 		backup.runtime = newClickHouseBackupRuntime()
 	}
@@ -396,7 +400,7 @@ func (backup *ClickHouseBackup) EnsureStatus() *ClickHouseBackupStatus {
 
 	backup.statusCreatorMutex.Lock()
 	defer backup.statusCreatorMutex.Unlock()
-	
+
 	if backup.Status == nil {
 		backup.Status = &ClickHouseBackupStatus{}
 	}
@@ -477,10 +481,10 @@ func (backup *ClickHouseBackup) IsScheduled() bool {
 
 // IsWatchMode checks if backup is in watch mode
 func (backup *ClickHouseBackup) IsWatchMode() bool {
-	return backup.Spec.BackupPolicy != nil && 
-		   backup.Spec.BackupPolicy.WatchMode != nil && 
-		   backup.Spec.BackupPolicy.WatchMode.Enabled != nil && 
-		   backup.Spec.BackupPolicy.WatchMode.Enabled.Value()
+	return backup.Spec.BackupPolicy != nil &&
+		backup.Spec.BackupPolicy.WatchMode != nil &&
+		backup.Spec.BackupPolicy.WatchMode.Enabled != nil &&
+		backup.Spec.BackupPolicy.WatchMode.Enabled.Value()
 }
 
 // GetCHIRef gets the ClickHouseInstallation reference
